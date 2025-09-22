@@ -192,4 +192,66 @@ export class DataImportService {
       return false;
     }
   }
+
+    static async generateTimetable(params: {
+    branch: string;
+    division: string;
+    year: string;
+    theoryDuration?: number;
+    labDuration?: number;
+    shortBreaks?: number;
+    longBreaks?: number;
+  }): Promise<any> {
+    try {
+      const response = await fetch(`${this.API_BASE_URL}/generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(params),
+      });
+
+      const result = await response.json();
+      return result;
+
+    } catch (error) {
+      console.error('Timetable generation error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to generate timetable'
+      };
+    }
+  }
+
+  // NEW: Get available branches and divisions
+  static async getBranchesAndDivisions(): Promise<any> {
+    try {
+      const response = await fetch(`${this.API_BASE_URL}/api/branches-divisions`);
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.error('Error fetching branches/divisions:', error);
+      return { success: false, error: 'Failed to fetch options' };
+    }
+  }
+
+  // NEW: Get stored timetables
+  static async getStoredTimetables(branch?: string, division?: string): Promise<any> {
+    try {
+      let url = `${this.API_BASE_URL}/api/timetables`;
+      const params = new URLSearchParams();
+      if (branch) params.append('branch', branch);
+      if (division) params.append('division', division);
+      if (params.toString()) url += `?${params.toString()}`;
+
+      const response = await fetch(url);
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.error('Error fetching timetables:', error);
+      return { success: false, error: 'Failed to fetch timetables' };
+    }
+  }
 }
+
+

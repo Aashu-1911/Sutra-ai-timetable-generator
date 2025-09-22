@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -6,6 +6,12 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar, Home, Plus, Eye, Edit, ArrowLeft, Zap, Download } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { DataImportService } from "@/utils/DataImportService";
+
+interface TimetableData {
+  headers: string[];
+  rows: string[][];
+}
 
 const TimetableGenerator = () => {
   const [selectedYear, setSelectedYear] = useState("");
@@ -16,7 +22,10 @@ const TimetableGenerator = () => {
   const [shortBreaks, setShortBreaks] = useState("");
   const [longBreaks, setLongBreaks] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedTimetable, setGeneratedTimetable] = useState(null);
+  const [generatedTimetable, setGeneratedTimetable] = useState<TimetableData | null>(null);
+  const [availableBranches, setAvailableBranches] = useState<string[]>([]);
+  const [availableDivisions, setAvailableDivisions] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -25,24 +34,6 @@ const TimetableGenerator = () => {
     { value: "2", label: "Second Year" },
     { value: "3", label: "Third Year" },
     { value: "4", label: "Fourth Year" }
-  ];
-
-  const branches = [
-    { value: "computer-eng", label: "Computer Engineering" },
-    { value: "computer-software", label: "Computer Engineering (Software)" },
-    { value: "aiml", label: "AIML (Artificial Intelligence & Machine Learning)" },
-    { value: "ds", label: "DS (Data Science)" },
-    { value: "entc", label: "ENTC (Electronics & Telecommunication)" },
-    { value: "it", label: "IT (Information Technology)" },
-    { value: "mechanical", label: "Mechanical Engineering" },
-    { value: "chemical", label: "Chemical Engineering" },
-    { value: "civil", label: "Civil Engineering" }
-  ];
-
-  const divisions = [
-    { value: "div-a", label: "Division A" },
-    { value: "div-b", label: "Division B" },
-    { value: "div-c", label: "Division C" }
   ];
 
   const theoryTimes = [
@@ -66,6 +57,37 @@ const TimetableGenerator = () => {
     { value: "4", label: "4" }
   ];
 
+  // Load available branches and divisions on component mount
+  useEffect(() => {
+    const loadOptions = async () => {
+      try {
+        setIsLoading(true);
+        const result = await DataImportService.getBranchesAndDivisions();
+        if (result.success) {
+          setAvailableBranches(result.data.branches || []);
+          setAvailableDivisions(result.data.divisions || []);
+        } else {
+          toast({
+            title: "Warning",
+            description: "Could not load available options. Please upload data first.",
+            variant: "destructive"
+          });
+        }
+      } catch (error) {
+        console.error('Error loading options:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load available options.",
+          variant: "destructive"
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadOptions();
+  }, [toast]);
+
   const handleGenerateTimetable = async () => {
     if (!selectedYear || !selectedBranch || !selectedDivision || !theoryLectureTime || !labTime || !shortBreaks || !longBreaks) {
       toast({
@@ -78,58 +100,63 @@ const TimetableGenerator = () => {
 
     setIsGenerating(true);
     
-    // Simulate AI processing
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    
-    setGeneratedTimetable({
-      branch: selectedBranch,
-      division: selectedDivision,
-      generatedAt: new Date().toLocaleString()
-    });
-    
-    setIsGenerating(false);
-    
-    toast({
-      title: "Timetable Generated Successfully!",
-      description: "Conflict-free timetable has been created with AI optimization.",
-    });
+    try {
+      const params = {
+        year: selectedYear,
+        branch: selectedBranch,
+        division: selectedDivision,
+        theoryDuration: parseInt(theoryLectureTime),
+        labDuration: parseInt(labTime),
+        shortBreaks: parseInt(shortBreaks),
+        longBreaks: parseInt(longBreaks)
+      };
 
-    // Navigate to the timetable view page
-    setTimeout(() => {
-      navigate(`/timetable-view?branch=${selectedBranch}&division=${selectedDivision}`);
-    }, 1000);
+      const result = await DataImportService.generateTimetable(params);
+      
+      if (result.success) {
+        setGeneratedTimetable(result.data.timetable);
+        toast({
+          title: "Timetable Generated Successfully!",
+          description: `Conflict-free timetable created for ${selectedBranch} Division ${selectedDivision}.`,
+        });
+      } else {
+        throw new Error(result.error || 'Generation failed');
+      }
+    } catch (error) {
+      console.error('Timetable generation error:', error);
+      toast({
+        title: "Generation Failed",
+        description: error.message || "An error occurred while generating the timetable.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
-  // Sample generated timetable data
-  const sampleTimetable = [
-    { 
-      day: "Monday", 
-      slots: [
-        { time: "9:00-10:00", subject: "Educational Psychology", faculty: "Dr. Johnson", room: "Room 101" },
-        { time: "10:00-11:00", subject: "Mathematics Methods", faculty: "Dr. Smith", room: "Room 203" },
-        { time: "11:00-12:00", subject: "English Literature", faculty: "Prof. Williams", room: "Room 105" },
-        { time: "2:00-4:00", subject: "Teaching Practice", faculty: "Dr. Brown", room: "Practice School" }
-      ]
-    },
-    { 
-      day: "Tuesday", 
-      slots: [
-        { time: "9:00-10:00", subject: "History of Education", faculty: "Dr. Davis", room: "Room 102" },
-        { time: "10:00-11:00", subject: "Child Psychology", faculty: "Dr. Johnson", room: "Room 101" },
-        { time: "11:00-12:00", subject: "Research Methodology", faculty: "Dr. Patel", room: "Room 201" },
-        { time: "2:00-3:00", subject: "Art & Craft", faculty: "Ms. Taylor", room: "Art Studio" }
-      ]
-    },
-    { 
-      day: "Wednesday", 
-      slots: [
-        { time: "9:00-10:00", subject: "Mathematics Methods", faculty: "Dr. Smith", room: "Room 203" },
-        { time: "10:00-11:00", subject: "Educational Technology", faculty: "Prof. Kumar", room: "Computer Lab" },
-        { time: "11:00-12:00", subject: "Physical Education", faculty: "Mr. Wilson", room: "Gymnasium" },
-        { time: "2:00-4:00", subject: "Science Lab", faculty: "Dr. Brown", room: "Lab A" }
-      ]
+  const handleViewExisting = async () => {
+    if (!selectedBranch || !selectedDivision) {
+      toast({
+        title: "Selection Required",
+        description: "Please select both branch and division to view timetables.",
+        variant: "destructive"
+      });
+      return;
     }
-  ];
+
+    navigate(`/timetable-view?branch=${selectedBranch}&division=${selectedDivision}`);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-accent via-secondary to-muted flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading available options...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-accent via-secondary to-muted">
@@ -207,11 +234,15 @@ const TimetableGenerator = () => {
                     <SelectValue placeholder="Choose a branch" />
                   </SelectTrigger>
                   <SelectContent>
-                    {branches.map((branch) => (
-                      <SelectItem key={branch.value} value={branch.value}>
-                        {branch.label}
-                      </SelectItem>
-                    ))}
+                    {availableBranches.length > 0 ? (
+                      availableBranches.map((branch) => (
+                        <SelectItem key={branch} value={branch}>
+                          {branch}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="no-data" disabled>No branches available - Upload data first</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -223,11 +254,15 @@ const TimetableGenerator = () => {
                     <SelectValue placeholder="Choose a division" />
                   </SelectTrigger>
                   <SelectContent>
-                    {divisions.map((division) => (
-                      <SelectItem key={division.value} value={division.value}>
-                        {division.label}
-                      </SelectItem>
-                    ))}
+                    {availableDivisions.length > 0 ? (
+                      availableDivisions.map((division) => (
+                        <SelectItem key={division} value={division}>
+                          Division {division}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="no-data" disabled>No divisions available - Upload data first</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -303,13 +338,13 @@ const TimetableGenerator = () => {
               <div className="flex flex-col space-y-3 pt-4">
                 <Button 
                   onClick={handleGenerateTimetable}
-                  disabled={isGenerating}
+                  disabled={isGenerating || availableBranches.length === 0}
                   className="bg-primary hover:bg-primary-light"
                 >
                   {isGenerating ? (
                     <>
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary-foreground mr-2"></div>
-                      Generating...
+                      Generating with AI...
                     </>
                   ) : (
                     <>
@@ -322,23 +357,18 @@ const TimetableGenerator = () => {
                 <Button 
                   variant="outline" 
                   className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
-                  onClick={() => {
-                    if (selectedBranch && selectedDivision) {
-                      navigate(`/timetable-view?branch=${selectedBranch}&division=${selectedDivision}`);
-                    } else {
-                      toast({
-                        title: "Selection Required",
-                        description: "Please select both branch and division to view timetables.",
-                        variant: "destructive"
-                      });
-                    }
-                  }}
+                  onClick={handleViewExisting}
+                  disabled={availableBranches.length === 0}
                 >
                   <Eye className="w-4 h-4 mr-2" />
                   View Existing Timetables
                 </Button>
                 
-                <Button variant="outline" className="border-primary text-primary hover:bg-primary hover:text-primary-foreground">
+                <Button 
+                  variant="outline" 
+                  className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
+                  disabled={availableBranches.length === 0}
+                >
                   <Edit className="w-4 h-4 mr-2" />
                   Modify Existing Timetable
                 </Button>
@@ -346,7 +376,7 @@ const TimetableGenerator = () => {
             </CardContent>
           </Card>
 
-          {/* AI Features Panel */}
+          {/* AI Features Panel - Keep existing */}
           <Card className="bg-card/50 backdrop-blur-sm shadow-card">
             <CardHeader>
               <CardTitle className="text-primary">AI-Powered Features</CardTitle>
@@ -371,9 +401,9 @@ const TimetableGenerator = () => {
                     status: "active"
                   },
                   {
-                    title: "Preference Learning",
-                    description: "Adapts to institutional scheduling preferences over time",
-                    status: "coming-soon"
+                    title: "Data-Driven Scheduling",
+                    description: "Uses your uploaded Excel data for accurate timetable generation",
+                    status: "active"
                   }
                 ].map((feature, index) => (
                   <div key={index} className="flex items-start space-x-3 p-3 rounded-lg bg-accent/30">
@@ -397,16 +427,16 @@ const TimetableGenerator = () => {
           </Card>
         </div>
 
-        {/* Generated Timetable Preview */}
+        {/* Generated Timetable Display */}
         {generatedTimetable && (
           <Card className="bg-card/50 backdrop-blur-sm shadow-card mt-8">
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
-                <CardTitle className="text-primary">Generated Timetable Preview</CardTitle>
+                <CardTitle className="text-primary">Generated Timetable</CardTitle>
                 <CardDescription>
-                  {branches.find(b => b.value === generatedTimetable.branch)?.label} - {divisions.find(d => d.value === generatedTimetable.division)?.label}
+                  {selectedBranch} - Division {selectedDivision} | Year {selectedYear}
                 </CardDescription>
-                <p className="text-xs text-muted-foreground mt-1">Generated: {generatedTimetable.generatedAt}</p>
+                <p className="text-xs text-muted-foreground mt-1">Generated: {new Date().toLocaleString()}</p>
               </div>
               <Button variant="outline" size="sm" className="border-primary text-primary hover:bg-primary hover:text-primary-foreground">
                 <Download className="w-4 h-4 mr-2" />
@@ -415,42 +445,31 @@ const TimetableGenerator = () => {
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 min-w-[900px]">
-                  {sampleTimetable.map((day) => (
-                    <Card key={day.day} className="bg-accent/30">
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-lg text-primary text-center">{day.day}</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        {day.slots.map((slot, index) => (
-                          <div key={index} className="p-3 rounded-lg bg-primary/10 border border-primary/20 text-sm">
-                            <div className="font-medium text-primary mb-1">{slot.time}</div>
-                            <div className="text-foreground font-medium">{slot.subject}</div>
-                            <div className="text-muted-foreground text-xs">{slot.faculty}</div>
-                            <div className="text-muted-foreground text-xs">{slot.room}</div>
-                          </div>
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      {generatedTimetable.headers.map((header, index) => (
+                        <th
+                          key={index}
+                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                        >
+                          {header}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {generatedTimetable.rows.map((row, rowIndex) => (
+                      <tr key={rowIndex}>
+                        {row.map((cell, cellIndex) => (
+                          <td key={cellIndex} className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                            {cell}
+                          </td>
                         ))}
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </div>
-              <div className="mt-6 p-4 bg-primary/5 rounded-lg border border-primary/20">
-                <h4 className="text-primary font-medium mb-2">AI Optimization Results:</h4>
-                <div className="grid md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Conflicts Resolved:</span>
-                    <span className="ml-2 font-medium text-primary">12</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Faculty Utilization:</span>
-                    <span className="ml-2 font-medium text-primary">94%</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Room Efficiency:</span>
-                    <span className="ml-2 font-medium text-primary">87%</span>
-                  </div>
-                </div>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </CardContent>
           </Card>
