@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -88,51 +89,69 @@ const TimetableGenerator = () => {
     loadOptions();
   }, [toast]);
 
-  const handleGenerateTimetable = async () => {
-    if (!selectedYear || !selectedBranch || !selectedDivision || !theoryLectureTime || !labTime || !shortBreaks || !longBreaks) {
-      toast({
-        title: "Complete Form Required",
-        description: "Please fill all fields to generate timetable.",
-        variant: "destructive"
-      });
-      return;
-    }
+const handleGenerateTimetable = async () => {
+  if (!selectedYear || !selectedBranch || !selectedDivision || !theoryLectureTime || !labTime || !shortBreaks || !longBreaks) {
+    toast({
+      title: "Complete Form Required",
+      description: "Please fill all fields to generate timetable.",
+      variant: "destructive"
+    });
+    return;
+  }
 
-    setIsGenerating(true);
+  setIsGenerating(true);
+  console.log('🎯 Starting timetable generation with params:', {
+    year: selectedYear,
+    branch: selectedBranch,
+    division: selectedDivision,
+    theoryDuration: parseInt(theoryLectureTime),
+    labDuration: parseInt(labTime),
+    shortBreaks: parseInt(shortBreaks),
+    longBreaks: parseInt(longBreaks)
+  });
+  
+  try {
+    const params = {
+      year: selectedYear,
+      branch: selectedBranch,
+      division: selectedDivision,
+      theoryDuration: parseInt(theoryLectureTime),
+      labDuration: parseInt(labTime),
+      shortBreaks: parseInt(shortBreaks),
+      longBreaks: parseInt(longBreaks)
+    };
+
+    console.log('🔄 Calling DataImportService.generateTimetable...');
+    const result = await DataImportService.generateTimetable(params);
+    console.log('✅ Generation result:', result);
     
-    try {
-      const params = {
-        year: selectedYear,
-        branch: selectedBranch,
-        division: selectedDivision,
-        theoryDuration: parseInt(theoryLectureTime),
-        labDuration: parseInt(labTime),
-        shortBreaks: parseInt(shortBreaks),
-        longBreaks: parseInt(longBreaks)
-      };
-
-      const result = await DataImportService.generateTimetable(params);
-      
-      if (result.success) {
-        setGeneratedTimetable(result.data.timetable);
-        toast({
-          title: "Timetable Generated Successfully!",
-          description: `Conflict-free timetable created for ${selectedBranch} Division ${selectedDivision}.`,
-        });
-      } else {
-        throw new Error(result.error || 'Generation failed');
-      }
-    } catch (error) {
-      console.error('Timetable generation error:', error);
+    if (result.success) {
+      setGeneratedTimetable(result.data.timetable);
       toast({
-        title: "Generation Failed",
-        description: error.message || "An error occurred while generating the timetable.",
-        variant: "destructive"
+        title: "Timetable Generated Successfully!",
+        description: `Complete timetable created for ${selectedBranch} Division ${selectedDivision} with ${result.data.timetable?.rows?.length || 0} entries.`,
       });
-    } finally {
-      setIsGenerating(false);
+      
+      // Auto-navigate to view the timetable
+      setTimeout(() => {
+        navigate(`/timetable-view?branch=${selectedBranch}&division=${selectedDivision}`);
+      }, 2000);
+      
+    } else {
+      throw new Error(result.error || 'Generation failed');
     }
-  };
+  } catch (error) {
+    console.error('❌ Timetable generation error:', error);
+    toast({
+      title: "Generation Failed",
+      description: error.message || "An error occurred while generating the timetable.",
+      variant: "destructive"
+    });
+  } finally {
+    setIsGenerating(false);
+  }
+};
+
 
   const handleViewExisting = async () => {
     if (!selectedBranch || !selectedDivision) {
@@ -169,7 +188,7 @@ const TimetableGenerator = () => {
                 <div className="w-10 h-10 bg-primary-foreground/10 rounded-lg flex items-center justify-center">
                   <Calendar className="w-6 h-6 text-primary-foreground" />
                 </div>
-                <h1 className="text-2xl font-bold text-primary-foreground">Timetable AI</h1>
+                <h1 className="text-2xl font-bold text-primary-foreground">Sutra.ai</h1>
               </Link>
             </div>
             <div className="flex items-center space-x-4">

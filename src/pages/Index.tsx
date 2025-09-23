@@ -23,7 +23,7 @@ const Index = () => {
                 alt="Timely.ai logo" 
                 className="w-10 h-10"
               />
-              <h1 className="text-2xl font-bold text-primary-foreground">Timely.ai</h1>
+              <h1 className="text-2xl font-bold text-primary-foreground">Sutra.ai</h1>
             </div>
             <nav className="hidden md:flex space-x-6">
               <button 

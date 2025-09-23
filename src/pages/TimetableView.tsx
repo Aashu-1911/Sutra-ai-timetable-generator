@@ -79,74 +79,88 @@ const TimetableView = () => {
     }
   };
 
-const loadTimetables = async () => {
-  try {
-    console.log('=== LOADING TIMETABLES ===');
-    console.log('Branch:', branch, 'Division:', division);
-    
-    const result = await DataImportService.getStoredTimetables(branch || undefined, division || undefined);
-    
-    console.log('API Result:', result);
-    
-    if (result.success) {
-      console.log('Timetables loaded:', result.data.length);
-      console.log('First timetable:', result.data[0]);
+  const loadTimetables = async () => {
+    try {
+      console.log('=== LOADING TIMETABLES ===');
+      console.log('Branch:', branch, 'Division:', division);
       
-      setTimetables(result.data);
-      if (result.data.length > 0) {
-        setSelectedTimetable(result.data[0]);
-        console.log('Selected timetable:', result.data[0]);
+      const result = await DataImportService.getStoredTimetables(branch || undefined, division || undefined);
+      
+      console.log('API Result:', result);
+      
+      if (result.success) {
+        console.log('Timetables loaded:', result.data.length);
+        console.log('First timetable:', result.data[0]);
+        
+        setTimetables(result.data);
+        if (result.data.length > 0) {
+          setSelectedTimetable(result.data[0]);
+          console.log('Selected timetable:', result.data[0]);
+        } else {
+          setSelectedTimetable(null);
+        }
       } else {
-        setSelectedTimetable(null);
+        console.error('API Error:', result.error);
+        toast({
+          title: "Error",
+          description: result.error || "Failed to load timetables",
+          variant: "destructive"
+        });
       }
-    } else {
-      console.error('API Error:', result.error);
+    } catch (error) {
+      console.error('Error loading timetables:', error);
       toast({
         title: "Error",
-        description: result.error || "Failed to load timetables",
+        description: "Failed to load timetables",
         variant: "destructive"
       });
     }
-  } catch (error) {
-    console.error('Error loading timetables:', error);
-    toast({
-      title: "Error",
-      description: "Failed to load timetables",
-      variant: "destructive"
-    });
-  }
-};
-
+  };
 
   const handleBranchChange = (newBranch: string) => {
-  const params = new URLSearchParams(searchParams.toString());
-  if (newBranch === "all") {
-    params.delete('branch'); // Remove branch param for "all"
-  } else {
-    params.set('branch', newBranch);
-  }
-  setSearchParams(params);
-};
+    const params = new URLSearchParams(searchParams.toString());
+    if (newBranch === "all") {
+      params.delete('branch');
+    } else {
+      params.set('branch', newBranch);
+    }
+    setSearchParams(params);
+  };
 
-const handleDivisionChange = (newDivision: string) => {
-  const params = new URLSearchParams(searchParams.toString());
-  if (newDivision === "all") {
-    params.delete('division'); // Remove division param for "all"
-  } else {
-    params.set('division', newDivision);
-  }
-  setSearchParams(params);
-};
+  const handleDivisionChange = (newDivision: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (newDivision === "all") {
+      params.delete('division');
+    } else {
+      params.set('division', newDivision);
+    }
+    setSearchParams(params);
+  };
 
+  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 const parseSelectedTimetable = (): TimetableRow[] => {
-  if (!selectedTimetable?.timetable) return [];
+  if (!selectedTimetable?.timetable?.rows) {
+    console.log('❌ No timetable data found');
+    return [];
+  }
   
-  return selectedTimetable.timetable.rows.map(row => {
-    // Clean the day name (remove Markdown formatting)
-    const cleanDay = (row[0] || '').replace(/\*\*/g, '').trim();
+  console.log('🔍 PARSING DEBUG - Raw rows:', selectedTimetable.timetable.rows.length);
+  
+  let currentDay = ''; // Track the current day
+  
+  const parsed = selectedTimetable.timetable.rows.map((row, index) => {
+    // Clean the day name (remove any markdown formatting)
+    let cleanDay = (row[0] || '').replace(/\*\*/g, '').trim();
     
-    return {
+    // If day is empty, use the last known day
+    if (!cleanDay && currentDay) {
+      cleanDay = currentDay;
+    } else if (cleanDay) {
+      currentDay = cleanDay; // Update current day
+    }
+    
+    const result = {
       day: cleanDay,
       time: row[1] || '',
       division: '',
@@ -155,38 +169,66 @@ const parseSelectedTimetable = (): TimetableRow[] => {
       faculty: row[4] || '',
       venue: row[5] || ''
     };
-  }).filter(row => 
-    // Filter out lunch entries and empty entries
-    row.courseName && 
-    row.courseName !== 'LUNCH' && 
-    row.courseName.trim() !== '' &&
-    row.day && 
-    row.day !== 'ALL' &&
-    row.day !== '' &&
-    row.time !== '1:00-2:00' // Skip lunch time
-  );
-};
-
-
-
-const groupTimetableByDayAndTime = (timetableData: TimetableRow[]) => {
-  const grouped: { [key: string]: { [key: string]: TimetableRow[] } } = {};
-  
-  timetableData.forEach(row => {
-    if (!grouped[row.day]) {
-      grouped[row.day] = {};
+    
+    // Debug first few entries
+    if (index < 15) {
+      console.log(`Row ${index}:`, row, '→', result);
     }
-    if (!grouped[row.day][row.time]) {
-      grouped[row.day][row.time] = [];
+    
+    return result;
+  }).filter(row => {
+    // Much more permissive filtering
+    const hasValidContent = row.courseName && 
+                           row.courseName.trim() !== '' && 
+                           row.day && 
+                           row.time;
+    
+    // Skip lunch entries and empty entries
+    if (row.courseName === '**LUNCH**' || row.courseName === 'LUNCH' || row.time === '1:00-2:00') {
+      console.log('🍽️ Filtering lunch:', row.day, row.time, row.courseName);
+      return false;
     }
-    grouped[row.day][row.time].push(row);
+    
+    // Skip completely empty entries
+    if (!row.courseName || row.courseName.trim() === '') {
+      console.log('❌ Filtering empty:', row);
+      return false;
+    }
+    
+    return hasValidContent;
   });
   
-  return grouped;
+  console.log('✅ Parsed entries:', parsed.length);
+  console.log('📊 Distribution by day:');
+  days.forEach(day => {
+    const dayEntries = parsed.filter(r => r.day === day);
+    console.log(`   ${day}: ${dayEntries.length} entries`);
+    if (dayEntries.length > 0) {
+      console.log(`      Times: ${dayEntries.map(e => e.time).join(', ')}`);
+      console.log(`      Courses: ${dayEntries.map(e => e.courseName).join(', ')}`);
+    }
+  });
+  
+  return parsed;
 };
 
 
-  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+  const groupTimetableByDayAndTime = (timetableData: TimetableRow[]) => {
+    const grouped: { [key: string]: { [key: string]: TimetableRow[] } } = {};
+    
+    timetableData.forEach(row => {
+      if (!grouped[row.day]) {
+        grouped[row.day] = {};
+      }
+      if (!grouped[row.day][row.time]) {
+        grouped[row.day][row.time] = [];
+      }
+      grouped[row.day][row.time].push(row);
+    });
+    
+    return grouped;
+  };
+
   const timeSlots = [
     '9:00-10:00', '10:00-11:00', '11:00-12:00', '12:00-1:00',
     '2:00-3:00', '3:00-4:00', '4:00-5:00'
@@ -217,7 +259,7 @@ const groupTimetableByDayAndTime = (timetableData: TimetableRow[]) => {
                 <div className="w-10 h-10 bg-primary-foreground/10 rounded-lg flex items-center justify-center">
                   <Calendar className="w-6 h-6 text-primary-foreground" />
                 </div>
-                <h1 className="text-2xl font-bold text-primary-foreground">Timetable AI</h1>
+                <h1 className="text-2xl font-bold text-primary-foreground">Sutra.ai</h1>
               </Link>
             </div>
             <div className="flex items-center space-x-4">
@@ -262,47 +304,47 @@ const groupTimetableByDayAndTime = (timetableData: TimetableRow[]) => {
 
           {/* Filter Controls */}
           <Card className="mt-6">
-  <CardHeader>
-    <CardTitle className="text-lg text-primary">Filter Options</CardTitle>
-    <CardDescription>Select branch and division to filter timetables</CardDescription>
-  </CardHeader>
-  <CardContent>
-    <div className="grid md:grid-cols-2 gap-4">
-      <div>
-        <label className="text-sm font-medium text-primary mb-2 block">Branch</label>
-        <Select value={branch} onValueChange={handleBranchChange}>
-          <SelectTrigger>
-            <SelectValue placeholder="Select branch" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Branches</SelectItem>
-            {availableBranches.map((branchOption) => (
-              <SelectItem key={branchOption} value={branchOption}>
-                {branchOption}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div>
-        <label className="text-sm font-medium text-primary mb-2 block">Division</label>
-        <Select value={division} onValueChange={handleDivisionChange}>
-          <SelectTrigger>
-            <SelectValue placeholder="Select division" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Divisions</SelectItem>
-            {availableDivisions.map((divisionOption) => (
-              <SelectItem key={divisionOption} value={divisionOption}>
-                Division {divisionOption}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-    </div>
-  </CardContent>
-</Card>
+            <CardHeader>
+              <CardTitle className="text-lg text-primary">Filter Options</CardTitle>
+              <CardDescription>Select branch and division to filter timetables</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium text-primary mb-2 block">Branch</label>
+                  <Select value={branch} onValueChange={handleBranchChange}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select branch" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Branches</SelectItem>
+                      {availableBranches.map((branchOption) => (
+                        <SelectItem key={branchOption} value={branchOption}>
+                          {branchOption}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-primary mb-2 block">Division</label>
+                  <Select value={division} onValueChange={handleDivisionChange}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select division" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Divisions</SelectItem>
+                      {availableDivisions.map((divisionOption) => (
+                        <SelectItem key={divisionOption} value={divisionOption}>
+                          Division {divisionOption}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {timetables.length === 0 ? (
@@ -332,6 +374,17 @@ const groupTimetableByDayAndTime = (timetableData: TimetableRow[]) => {
           </Card>
         ) : (
           <div className="space-y-6">
+            {/* Debug Info Card */}
+            {selectedTimetable && (
+              <Card className="bg-yellow-50 border-yellow-200">
+                <CardContent className="pt-4">
+                  <div className="text-sm">
+                    <strong>Debug Info:</strong> Parsed {timetableData.length} entries from {selectedTimetable.timetable.rows.length} raw rows
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Timetable Selection */}
             {timetables.length > 1 && (
               <Card className="bg-card/50 backdrop-blur-sm shadow-card">
@@ -369,190 +422,255 @@ const groupTimetableByDayAndTime = (timetableData: TimetableRow[]) => {
 
             {/* Timetable Display */}
             {selectedTimetable && (
-  <Card className="bg-card/50 backdrop-blur-sm shadow-card">
-    <CardHeader className="flex flex-row items-center justify-between">
-      <div>
-        <CardTitle className="text-primary">
-          {selectedTimetable.branch} - Division {selectedTimetable.division}
-        </CardTitle>
-        <CardDescription>
-          Year {selectedTimetable.year} | Generated: {new Date(selectedTimetable.generatedAt).toLocaleString()}
-        </CardDescription>
-      </div>
-      <Button variant="outline" size="sm" className="border-primary text-primary hover:bg-primary hover:text-primary-foreground">
-        <Download className="w-4 h-4 mr-2" />
-        Export
-      </Button>
-    </CardHeader>
-    <CardContent className="p-0">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1200px]">
-          <thead className="bg-primary">
-            <tr>
-              <th className="p-4 text-primary-foreground font-semibold text-left w-32">Time</th>
-              {days.map((day) => (
-                <th key={day} className="p-4 text-primary-foreground font-semibold text-center min-w-48">
-                  {day}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {timeSlots.map((time) => (
-              <tr key={time} className="border-b border-border">
-                <td className="p-3 bg-muted/30 font-medium text-sm text-primary border-r">
-                  <div className="text-center">
-                    {time === '12:00-1:00' ? (
-                      <Badge variant="secondary" className="text-xs">
-                        LUNCH
-                      </Badge>
-                    ) : (
-                      time
-                    )}
+              <Card className="bg-card/50 backdrop-blur-sm shadow-card">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle className="text-primary">
+                      {selectedTimetable.branch} - Division {selectedTimetable.division}
+                    </CardTitle>
+                    <CardDescription>
+                      Year {selectedTimetable.year} | Generated: {new Date(selectedTimetable.generatedAt).toLocaleString()}
+                    </CardDescription>
                   </div>
-                </td>
-                {days.map((day) => {
-                  // Find all slots for this day and time
-                  const daySlots = timetableData.filter(row => 
-                    row.day === day && row.time === time
-                  );
-                  
-                  if (time === '12:00-1:00') {
-                    return (
-                      <td key={`${day}-${time}`} className="p-3 h-20">
-                        <div className="h-full bg-orange-50 rounded border border-orange-200 flex items-center justify-center">
-                          <span className="text-orange-600 text-sm font-medium">LUNCH BREAK</span>
-                        </div>
-                      </td>
-                    );
-                  }
-                  
-                  if (daySlots.length === 0) {
-                    return (
-                      <td key={`${day}-${time}`} className="p-3 h-20">
-                        <div className="h-full bg-gray-50 rounded border-2 border-dashed border-gray-200 flex items-center justify-center">
-                          <span className="text-gray-400 text-xs">Free Period</span>
-                        </div>
-                      </td>
-                    );
-                  }
-
-                  // Show the first slot (or combine if multiple)
-                  const mainSlot = daySlots[0];
-                  
-                  return (
-                    <td key={`${day}-${time}`} className="p-3 h-20">
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <div 
-                            className="h-full p-3 rounded cursor-pointer transition-all duration-200 bg-blue-50 border border-blue-200 hover:bg-blue-100 shadow-sm"
-                            onClick={() => setSelectedSlot(mainSlot)}
-                          >
-                            <div className="flex flex-col h-full justify-between">
-                              <div>
-                                <div className="font-semibold text-sm text-blue-900 truncate">
-                                  {mainSlot.courseName}
-                                </div>
-                                <div className="text-xs text-blue-600 truncate">
-                                  {mainSlot.faculty}
-                                </div>
-                                <div className="text-xs text-blue-500 truncate">
-                                  {mainSlot.venue}
-                                </div>
-                              </div>
-                              <div className="flex justify-between items-end">
-                                {mainSlot.classBatch && (
-                                  <Badge className="text-xs bg-blue-100 text-blue-800 w-fit">
-                                    {mainSlot.classBatch}
+                  <Button variant="outline" size="sm" className="border-primary text-primary hover:bg-primary hover:text-primary-foreground">
+                    <Download className="w-4 h-4 mr-2" />
+                    Export
+                  </Button>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[1400px]">
+                      <thead className="bg-primary">
+                        <tr>
+                          <th className="p-4 text-primary-foreground font-semibold text-left w-32">Time</th>
+                          {days.map((day) => (
+                            <th key={day} className={`p-4 text-primary-foreground font-semibold text-center min-w-48 ${
+                              day === 'Saturday' ? 'bg-blue-600' : day === 'Sunday' ? 'bg-red-600' : ''
+                            }`}>
+                              {day}
+                              {day === 'Saturday' && <div className="text-xs opacity-75">Working Day</div>}
+                              {day === 'Sunday' && <div className="text-xs opacity-75">Holiday</div>}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {timeSlots.map((time) => (
+                          <tr key={time} className="border-b border-border">
+                            <td className="p-3 bg-muted/30 font-medium text-sm text-primary border-r">
+                              <div className="text-center">
+                                {time === '12:00-1:00' ? (
+                                  <Badge variant="secondary" className="text-xs">
+                                    LUNCH
                                   </Badge>
-                                )}
-                                {daySlots.length > 1 && (
-                                  <Badge className="text-xs bg-green-100 text-green-800 w-fit">
-                                    +{daySlots.length - 1} more
-                                  </Badge>
+                                ) : (
+                                  time
                                 )}
                               </div>
-                            </div>
-                          </div>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle className="flex items-center space-x-2">
-                              <Badge className="bg-blue-100 text-blue-800">
-                                {mainSlot.courseName.includes('LAB') ? 'Lab' : 'Theory'}
-                              </Badge>
-                              <span>{mainSlot.courseName}</span>
-                            </DialogTitle>
-                            <DialogDescription>
-                              {day} at {time}
-                            </DialogDescription>
-                          </DialogHeader>
-                          <div className="space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                              <div className="space-y-2">
-                                <div className="flex items-center space-x-2">
-                                  <Users className="w-4 h-4 text-muted-foreground" />
-                                  <span className="text-sm font-medium">Faculty:</span>
-                                </div>
-                                <p className="text-sm pl-6">{mainSlot.faculty}</p>
-                              </div>
-                              <div className="space-y-2">
-                                <div className="flex items-center space-x-2">
-                                  <MapPin className="w-4 h-4 text-muted-foreground" />
-                                  <span className="text-sm font-medium">Venue:</span>
-                                </div>
-                                <p className="text-sm pl-6">{mainSlot.venue}</p>
-                              </div>
-                            </div>
-                            
-                            {mainSlot.classBatch && (
-                              <div className="space-y-2">
-                                <div className="flex items-center space-x-2">
-                                  <Users className="w-4 h-4 text-muted-foreground" />
-                                  <span className="text-sm font-medium">Class/Batch:</span>
-                                </div>
-                                <p className="text-sm pl-6">{mainSlot.classBatch}</p>
-                              </div>
-                            )}
-
-                            <div className="space-y-2">
-                              <div className="flex items-center space-x-2">
-                                <Clock className="w-4 h-4 text-muted-foreground" />
-                                <span className="text-sm font-medium">Time:</span>
-                              </div>
-                              <p className="text-sm pl-6">{day} | {time}</p>
-                            </div>
-
-                            {daySlots.length > 1 && (
-                              <div className="space-y-2">
-                                <div className="flex items-center space-x-2">
-                                  <Book className="w-4 h-4 text-muted-foreground" />
-                                  <span className="text-sm font-medium">Multiple Sessions:</span>
-                                </div>
-                                <div className="pl-6 space-y-1">
-                                  {daySlots.map((slot, index) => (
-                                    <div key={index} className="text-sm">
-                                      {slot.courseName} - {slot.faculty} ({slot.classBatch})
+                            </td>
+                            {days.map((day) => {
+                              // ENHANCED SLOT MATCHING - More flexible time matching
+                              const daySlots = timetableData.filter(row => {
+                                const dayMatch = row.day === day;
+                                const timeMatch = row.time === time || 
+                                                 row.time.trim() === time.trim() ||
+                                                 row.time.replace(/\s/g, '') === time.replace(/\s/g, '');
+                                
+                                return dayMatch && timeMatch;
+                              });
+                              
+                              // Debug logging for first few slots
+                              if ((day === 'Monday' && time === '9:00-10:00') || daySlots.length > 0) {
+                                console.log(`🔍 ${day} ${time}:`, {
+                                  found: daySlots.length,
+                                  allDayEntries: timetableData.filter(r => r.day === day).length,
+                                  dayTimes: [...new Set(timetableData.filter(r => r.day === day).map(r => r.time))],
+                                  lookingFor: time
+                                });
+                              }
+                              
+                              // Handle Sunday (Holiday)
+                              if (day === 'Sunday') {
+                                return (
+                                  <td key={`${day}-${time}`} className="p-3 h-20">
+                                    <div className="h-full bg-red-50 rounded border border-red-200 flex items-center justify-center">
+                                      <span className="text-red-600 text-sm font-medium">HOLIDAY</span>
                                     </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </DialogContent>
-                      </Dialog>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </CardContent>
-  </Card>
-)}
+                                  </td>
+                                );
+                              }
+                              
+                              // Handle Lunch Break
+                              if (time === '12:00-1:00') {
+                                return (
+                                  <td key={`${day}-${time}`} className="p-3 h-20">
+                                    <div className="h-full bg-orange-50 rounded border border-orange-200 flex items-center justify-center">
+                                      <span className="text-orange-600 text-sm font-medium">LUNCH BREAK</span>
+                                    </div>
+                                  </td>
+                                );
+                              }
+                              
+                              // Handle Free Period
+                              if (daySlots.length === 0) {
+                                return (
+                                  <td key={`${day}-${time}`} className="p-3 h-20">
+                                    <div className={`h-full rounded border-2 border-dashed flex items-center justify-center ${
+                                      day === 'Saturday' ? 'bg-blue-25 border-blue-200' : 'bg-gray-50 border-gray-200'
+                                    }`}>
+                                      <span className="text-gray-400 text-xs">Free Period</span>
+                                    </div>
+                                  </td>
+                                );
+                              }
 
+                              // Show the session
+                              const mainSlot = daySlots[0];
+                              
+                              // Determine session type and colors
+                              const getSessionStyle = (courseName: string) => {
+                                if (courseName.includes('LIBRARY')) {
+                                  return 'bg-purple-50 border-purple-200 hover:bg-purple-100';
+                                } else if (courseName.includes('PROJECT')) {
+                                  return 'bg-orange-50 border-orange-200 hover:bg-orange-100';
+                                } else if (courseName.includes('LAB')) {
+                                  return 'bg-green-50 border-green-200 hover:bg-green-100';
+                                } else {
+                                  return 'bg-blue-50 border-blue-200 hover:bg-blue-100';
+                                }
+                              };
+
+                              const getSessionType = (courseName: string) => {
+                                if (courseName.includes('LIBRARY')) return 'Library';
+                                if (courseName.includes('PROJECT')) return 'Project';
+                                if (courseName.includes('LAB')) return 'Lab';
+                                return 'Theory';
+                              };
+
+                              const getSessionBadgeColor = (sessionType: string) => {
+                                switch (sessionType) {
+                                  case 'Lab': return 'bg-green-100 text-green-800';
+                                  case 'Library': return 'bg-purple-100 text-purple-800';
+                                  case 'Project': return 'bg-orange-100 text-orange-800';
+                                  default: return 'bg-blue-100 text-blue-800';
+                                }
+                              };
+                              
+                              return (
+                                <td key={`${day}-${time}`} className="p-3 h-20">
+                                  <Dialog>
+                                    <DialogTrigger asChild>
+                                      <div 
+                                        className={`h-full p-3 rounded cursor-pointer transition-all duration-200 shadow-sm ${getSessionStyle(mainSlot.courseName)}`}
+                                        onClick={() => setSelectedSlot(mainSlot)}
+                                      >
+                                        <div className="flex flex-col h-full justify-between">
+                                          <div>
+                                            <div className="font-semibold text-sm truncate">
+                                              {mainSlot.courseName}
+                                            </div>
+                                            <div className="text-xs truncate opacity-75">
+                                              {mainSlot.faculty}
+                                            </div>
+                                            <div className="text-xs truncate opacity-75">
+                                              {mainSlot.venue}
+                                            </div>
+                                          </div>
+                                          <div className="flex justify-between items-end">
+                                            {mainSlot.classBatch && (
+                                              <Badge className="text-xs bg-blue-100 text-blue-800 w-fit">
+                                                {mainSlot.classBatch}
+                                              </Badge>
+                                            )}
+                                            {daySlots.length > 1 && (
+                                              <Badge className="text-xs bg-green-100 text-green-800 w-fit">
+                                                +{daySlots.length - 1} more
+                                              </Badge>
+                                            )}
+                                            <Badge className={`text-xs w-fit ${getSessionBadgeColor(getSessionType(mainSlot.courseName))}`}>
+                                              {getSessionType(mainSlot.courseName)}
+                                            </Badge>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </DialogTrigger>
+                                    <DialogContent>
+                                      <DialogHeader>
+                                        <DialogTitle className="flex items-center space-x-2">
+                                          <Badge className={getSessionBadgeColor(getSessionType(mainSlot.courseName))}>
+                                            {getSessionType(mainSlot.courseName)}
+                                          </Badge>
+                                          <span>{mainSlot.courseName}</span>
+                                        </DialogTitle>
+                                        <DialogDescription>
+                                          {day} at {time}
+                                        </DialogDescription>
+                                      </DialogHeader>
+                                      <div className="space-y-4">
+                                        <div className="grid grid-cols-2 gap-4">
+                                          <div className="space-y-2">
+                                            <div className="flex items-center space-x-2">
+                                              <Users className="w-4 h-4 text-muted-foreground" />
+                                              <span className="text-sm font-medium">Faculty:</span>
+                                            </div>
+                                            <p className="text-sm pl-6">{mainSlot.faculty}</p>
+                                          </div>
+                                          <div className="space-y-2">
+                                            <div className="flex items-center space-x-2">
+                                              <MapPin className="w-4 h-4 text-muted-foreground" />
+                                              <span className="text-sm font-medium">Venue:</span>
+                                            </div>
+                                            <p className="text-sm pl-6">{mainSlot.venue}</p>
+                                          </div>
+                                        </div>
+                                        
+                                        {mainSlot.classBatch && (
+                                          <div className="space-y-2">
+                                            <div className="flex items-center space-x-2">
+                                              <Users className="w-4 h-4 text-muted-foreground" />
+                                              <span className="text-sm font-medium">Class/Batch:</span>
+                                            </div>
+                                            <p className="text-sm pl-6">{mainSlot.classBatch}</p>
+                                          </div>
+                                        )}
+
+                                        <div className="space-y-2">
+                                          <div className="flex items-center space-x-2">
+                                            <Clock className="w-4 h-4 text-muted-foreground" />
+                                            <span className="text-sm font-medium">Schedule:</span>
+                                          </div>
+                                          <p className="text-sm pl-6">{day} | {time}</p>
+                                        </div>
+
+                                        {daySlots.length > 1 && (
+                                          <div className="space-y-2">
+                                            <div className="flex items-center space-x-2">
+                                              <Book className="w-4 h-4 text-muted-foreground" />
+                                              <span className="text-sm font-medium">Multiple Sessions:</span>
+                                            </div>
+                                            <div className="pl-6 space-y-1">
+                                              {daySlots.map((slot, index) => (
+                                                <div key={index} className="text-sm">
+                                                  {slot.courseName} - {slot.faculty} ({slot.classBatch})
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </DialogContent>
+                                  </Dialog>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Statistics */}
             {selectedTimetable && timetableData.length > 0 && (
@@ -561,7 +679,7 @@ const groupTimetableByDayAndTime = (timetableData: TimetableRow[]) => {
                   <CardTitle className="text-primary">Weekly Statistics</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid md:grid-cols-4 gap-6">
+                  <div className="grid md:grid-cols-6 gap-4">
                     <div className="text-center">
                       <div className="text-2xl font-bold text-primary">
                         {timetableData.filter(slot => slot.courseName && slot.courseName !== '').length}
@@ -570,21 +688,33 @@ const groupTimetableByDayAndTime = (timetableData: TimetableRow[]) => {
                     </div>
                     <div className="text-center">
                       <div className="text-2xl font-bold text-blue-600">
-                        {new Set(timetableData.map(slot => slot.courseName).filter(course => course && course !== '')).size}
+                        {timetableData.filter(slot => slot.courseName && !slot.courseName.includes('LAB') && !slot.courseName.includes('LIBRARY') && !slot.courseName.includes('PROJECT') && slot.courseName !== 'HOLIDAY').length}
                       </div>
-                      <div className="text-sm text-muted-foreground">Unique Courses</div>
+                      <div className="text-sm text-muted-foreground">Theory Sessions</div>
                     </div>
                     <div className="text-center">
                       <div className="text-2xl font-bold text-green-600">
-                        {new Set(timetableData.map(slot => slot.faculty).filter(faculty => faculty && faculty !== '')).size}
+                        {timetableData.filter(slot => slot.courseName && slot.courseName.includes('LAB')).length}
                       </div>
-                      <div className="text-sm text-muted-foreground">Faculty Members</div>
+                      <div className="text-sm text-muted-foreground">Lab Sessions</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-purple-600">
+                        {timetableData.filter(slot => slot.courseName && slot.courseName.includes('LIBRARY')).length}
+                      </div>
+                      <div className="text-sm text-muted-foreground">Library Hours</div>
                     </div>
                     <div className="text-center">
                       <div className="text-2xl font-bold text-orange-600">
-                        {new Set(timetableData.map(slot => slot.venue).filter(venue => venue && venue !== '')).size}
+                        {timetableData.filter(slot => slot.courseName && slot.courseName.includes('PROJECT')).length}
                       </div>
-                      <div className="text-sm text-muted-foreground">Venues Used</div>
+                      <div className="text-sm text-muted-foreground">Project Hours</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-gray-600">
+                        {new Set(timetableData.map(slot => slot.faculty).filter(faculty => faculty && faculty !== '')).size}
+                      </div>
+                      <div className="text-sm text-muted-foreground">Faculty Members</div>
                     </div>
                   </div>
                 </CardContent>
