@@ -1,3 +1,5 @@
+import { buildApiUrl, API_CONFIG } from '@/config/api';
+
 interface ImportResult {
   success: boolean;
   error?: string;
@@ -15,7 +17,7 @@ interface CollegeData {
 }
 
 export class DataImportService {
-  private static API_BASE_URL = 'http://localhost:3000'; // Adjust as needed
+  private static API_BASE_URL = API_CONFIG.BASE_URL;
 
   // Main import method - now only handles backend uploads
   static async importFile(file: File): Promise<ImportResult> {

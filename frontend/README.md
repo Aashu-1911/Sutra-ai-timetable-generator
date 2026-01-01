@@ -1,8 +1,30 @@
-# Welcome to your Lovable project
+# Merit Grid - Frontend Application
 
 ## Project info
 
 **URL**: https://lovable.dev/projects/7e3cf833-c2ef-4301-89b7-f29f4f3e73f2
+
+This is the frontend application for Merit Grid - an intelligent timetable generation system for educational institutions.
+
+## Backend Connection
+
+This frontend connects to a Node.js/Express backend server. See [CONNECTION_GUIDE.md](../CONNECTION_GUIDE.md) for complete setup instructions.
+
+**Quick Start:**
+
+1. Install dependencies:
+```sh
+npm install
+```
+
+2. Start the development server:
+```sh
+npm run dev
+```
+
+The frontend will run on `http://localhost:8080` and automatically connect to the backend at `http://localhost:3000`.
+
+**Note:** Make sure the backend server is running before using the application. See `backend/sandbox/README.md` for backend setup.
 
 ## How can I edit this code?
 
